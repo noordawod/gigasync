@@ -6,9 +6,10 @@ https://matthew.mceachen.us/geek/gigasync/gigasync.pod.html
 
 Changes
 -------
-The original script built a list of files starting from the root down to the source directory. And when
-the files were copied to the target directory, the same exact tree was recreated on the target server. This
-was changed so that relative directories are only created as the root becomes the source directory itself.
+The original script builds a list of files descending from the root down to the source directory. When
+files are copied to target directory, the same exact tree is recreated on the target server. This is now
+changed so that relative directories are only created in target directory (effectively, making the source
+directory appear as the root.)
 
 In addition, the 2nd parameter to 'gigasync' used to be a hostname. In this version, however, it's a destination
 directory (including any needed hostnames to be used with ssh) and is passed to rsync as-is.
