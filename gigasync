@@ -1,0 +1,211 @@
+#!/usr/bin/perl -w
+
+# Copyright (c) 2004, Matthew R. McEachen
+
+# Permission is hereby granted, free of charge, to any person
+# obtaining a copy of this software and associated documentation files
+# (the "Software"), to deal in the Software without restriction,
+# including without limitation the rights to use, copy, modify, merge,
+# publish, distribute, sublicense, and/or sell copies of the Software,
+# and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be
+# included in all copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+# EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+# MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+# BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+# ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+# CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+# <http://matthew.mceachen.us/geek/gigasync/>
+
+# Changes made by Noor Dawod, https://github.com/noordawod/gigasync
+
+use strict;
+
+use Env;
+use File::Basename;
+use File::Find;
+use File::Path;
+use File::Temp;
+use File::stat;
+use Getopt::Long;
+use Pod::Usage;
+
+my $man = 0;
+my $help = 0;
+my $run_size = 1024*1024*128;   #128 Mb
+my $exclude_pattern;
+my $verbose;
+
+# DON'T INCLUDE ANY OPTIONS THAT INFER --recusive (like --archive)!
+
+my $rsync_options = '-lptgoD --no-implied-dirs --log-format="%t %f (%l bytes)" ';
+$rsync_options .= $ENV{RSYNC_OPTIONS} if $ENV{RSYNC_OPTIONS};
+
+GetOptions('help|?|h' => \$help, 
+	   'man' => \$man,
+           'verbose' => \$verbose,
+	   'run-size:i' => \$run_size,
+	   'exclude_pattern:s' => \$exclude_pattern
+          ) or pod2usage(2);
+pod2usage(1) if $help;
+pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+
+my $src_dir = shift;            # first arg is source directory
+my $dest_dir = shift;           # second arg is dest directory
+
+if (! -d $src_dir) {
+  print "SRC '$src_dir' is not a directory.";
+  pod2usage(2);
+}
+
+my $batchsize;
+my $OUT;
+
+sub new_srclist() {
+  $batchsize = 0;
+  # UNLINK on exit is by default.
+  $OUT = new File::Temp(UNLINK=>1) or die "Can't open tempfile: $!";
+}
+
+sub run_rsync() {
+  my $retries = 5;
+  while ($retries--) {
+    close $OUT;
+    my $rsync_status = system("rsync ".$rsync_options." --files-from=".$OUT->filename." ".$src_dir." ".$dest_dir);
+    $rsync_status >>= 8;
+    return if ($rsync_status == 0);
+    if ($rsync_status == 12) {
+      print "Network issues. I'll retry in a bit.\n" if $verbose;
+      sleep(90);
+    } else {
+      die "rsync returned $rsync_status: $!" if ($rsync_status != 0);
+    }
+  }
+  die "Failed to transfer, even after 5 retries";
+}
+
+new_srclist();
+
+File::Find::find(\&do, $src_dir);
+
+run_rsync() if ($batchsize > 0);
+
+sub do {
+  return if ($File::Find::name eq $src_dir);
+  return if (! -f $File::Find::name);
+  if (($exclude_pattern) && ($File::Find::name =~ $exclude_pattern)) {
+    return; 
+  }
+  my $st = stat($File::Find::name);
+  if (!$st) {
+    # File is missing (?! emacs temp file?)
+    return;
+  }
+  my $rel_file = $File::Find::name;
+  $rel_file =~ s:^\Q$src_dir/::;
+  print $OUT $rel_file . "\n";
+  if ($st->size + $batchsize >= $run_size) {
+    run_rsync();
+    new_srclist();
+    $batchsize=0;
+  } else {
+    $batchsize += $st->size;
+  }
+}
+
+__END__
+
+=head1 NAME
+
+gigasync - Tool that enables rsync to mirror enormous directory trees.
+
+L<http://samba.org/rsync/>) has a couple issues with mirroring large
+(> 100K) directory trees.
+
+=over
+
+=item * rsync's memory usage is directly proportional to the number of
+files in a tree. Large directories take a large amount of RAM.
+
+=item * rsync can recover from previous failures, but always
+determines the files to transfer up-front. If the connection fails
+before that determination can be made, no forward progress in the
+mirror can occur.
+
+=back
+
+The solution? Chop up the workload by using perl to recurse the
+directory tree, building smallish lists of files to transfer with
+rsync. Most of the time these small lists of files transfer over fine,
+but if they fail, this script can look for that specific failure and
+retry that set a couple times before giving up.
+
+=head1 SYNOPSIS
+
+gigasync [OPTION]... SRCDIR DESTHOST
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--run-size>
+
+The minimum number of bytes to transfer per batch.
+
+=item B<--exclude_pattern>
+
+As this script will be recursing through the source directory, if you
+want to add exclude patterns in this option it means rsync won't be
+run against file lists that it will immediately ignore.
+
+=item B<--help, -h>
+
+Print a brief help message and exits.
+
+=item B<--man>
+
+Prints the manual page and exits.
+
+=back
+
+=head1 PARAMETERS
+
+=over 8
+
+=item B<SRCDIR>
+
+The source directory to recurse. Note that the source directory should
+NOT be included in the [RSYNC] section that follows.
+
+=item B<DESTHOST>
+
+The destination host to mirror to. Note that the destination directory
+will exactly match the source's directory heirarchy. If that's not
+appropriate, change the script.
+
+=back
+
+=head1 ENVIRONMENT
+
+=over 8
+
+=item B<RSYNC_OPTIONS>
+
+The environment variable that will be transparently passed along with
+all rsync incantations. C<--bwlimit=20> limits the bandwidth used by
+rsync to be ~ 20KB/s, for example. Note that you B<connot> use C<-a>
+or C<--recurse> (as that breaks the whole point of this
+script). Worse, those options B<are not checked for>, so bad things
+happen if you include those in this environment variable. See the
+script for more details.
+
+=back
+
+=cut
