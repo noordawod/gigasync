@@ -44,6 +44,8 @@ my $exclude_pattern;
 my $verbose;
 
 # DON'T INCLUDE ANY OPTIONS THAT INFER --recusive (like --archive)!
+# ALSO, THE SCRIPT WRITES THE FILES THAT WILL BE COPIES SO NO NEED TO
+# INCLUDE -v (VERBOSE) MODE.
 
 my $rsync_options = '-lptgoD --no-implied-dirs --log-format="%t %f (%l bytes)" ';
 $rsync_options .= $ENV{RSYNC_OPTIONS} if $ENV{RSYNC_OPTIONS};
@@ -111,6 +113,7 @@ sub do {
   my $rel_file = $File::Find::name;
   $rel_file =~ s:^\Q$src_dir/::;
   print $OUT $rel_file . "\n";
+  print "$rel_file\n";
   if ($st->size + $batchsize >= $run_size) {
     run_rsync();
     new_srclist();
