@@ -39,7 +39,7 @@ use Pod::Usage;
 
 my $man = 0;
 my $help = 0;
-my $run_size = 1024*1024*128;   #128 Mb
+my $run_size_mb = 128;   # Mb
 my $exclude_pattern;
 my $verbose;
 
@@ -53,7 +53,7 @@ $rsync_options .= $ENV{RSYNC_OPTIONS} if $ENV{RSYNC_OPTIONS};
 GetOptions('help|?|h' => \$help, 
 	   'man' => \$man,
            'verbose' => \$verbose,
-	   'run-size:i' => \$run_size,
+	   'run-size:i' => \$run_size_mb,
 	   'exclude_pattern:s' => \$exclude_pattern
           ) or pod2usage(2);
 pod2usage(1) if $help;
@@ -61,6 +61,9 @@ pod2usage(-exitstatus => 0, -verbose => 2) if $man;
 
 my $src_dir = shift;            # first arg is source directory
 my $dest_dir = shift;           # second arg is dest directory
+
+# run size in bytes
+my $run_size = 1024 * 1024 * $run_size_mb;
 
 if (! -d $src_dir) {
   print "SRC '$src_dir' is not a directory.";
