@@ -1,4 +1,4 @@
-# Ggigasync
+# Gigasync
 Rsync-based Perl script to incrementally mirror enormous directory trees.
 
 Written originally by Matthew R. McEachen:
@@ -18,3 +18,5 @@ Additions
 ---------
 I also supplied a short shell script to facilitate passing rsync options using the evironment variable
 RSYNC_OPTIONS.
+
+The helper accepts 4 parameters, just run it without parameters to see a short usage help.
